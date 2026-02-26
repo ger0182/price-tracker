@@ -7,10 +7,13 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET");
 
   const PRODUCT_ID = "DAAT0R-1900GIZXQ";
+  // PChome API 需要在商品 ID 後加上 "-000"
+  const PRODUCT_ID_WITH_SUFFIX = `${PRODUCT_ID}-000`;
 
   try {
-    // PChome 公開商品資訊 API
-    const apiUrl = `https://ecapi.pchome.com.tw/cdn/ecshop/prodinfo/v2/items/${PRODUCT_ID}?fields=Price,Qty,Name,Store`;
+    // 正確的 PChome 商品 API 格式
+    // 參考：https://ecapi.pchome.com.tw/ecshop/prodapi/v2/prod?id=商品ID-000&fields=Price,Qty
+    const apiUrl = `https://ecapi.pchome.com.tw/ecshop/prodapi/v2/prod?id=${PRODUCT_ID_WITH_SUFFIX}&fields=Price,Qty,Store`;
 
     const response = await fetch(apiUrl, {
       headers: {
@@ -26,24 +29,18 @@ export default async function handler(req, res) {
 
     const raw = await response.text();
 
-    // PChome API 有時回傳 JSONP 格式，需要解析
+    // PChome API 回傳純 JSON 格式
     let data;
     try {
       data = JSON.parse(raw);
     } catch {
-      // 嘗試解析 JSONP: callback({...})
-      const match = raw.match(/\((\{[\s\S]*\})\)/);
-      if (match) {
-        data = JSON.parse(match[1]);
-      } else {
-        throw new Error("無法解析 PChome API 回應");
-      }
+      throw new Error("無法解析 PChome API 回應: " + raw.substring(0, 100));
     }
 
-    // 取出商品資料（API 回傳格式：{ "DAAT0R-1900GIZXQ": { Price: {...}, Qty: N } }）
-    const productData = data[PRODUCT_ID];
+    // 回傳格式：{ "DAAT0R-1900GIZXQ-000": { Price: { P: 售價, M: 原價 }, Qty: 庫存數 } }
+    const productData = data[PRODUCT_ID_WITH_SUFFIX];
     if (!productData) {
-      throw new Error("找不到商品資料");
+      throw new Error("找不到商品資料，API 回傳: " + JSON.stringify(data).substring(0, 200));
     }
 
     const price = productData?.Price?.P || productData?.Price?.M || null;
@@ -51,7 +48,7 @@ export default async function handler(req, res) {
     const inStock = (productData?.Qty ?? 0) > 0;
 
     if (!price) {
-      throw new Error("無法取得價格");
+      throw new Error("無法取得價格，Price 欄位: " + JSON.stringify(productData?.Price));
     }
 
     res.status(200).json({
