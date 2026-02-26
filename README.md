@@ -1,87 +1,102 @@
-# 🛒 滿意寶寶 PChome 價格追蹤器
+# 🛒 滿意寶寶 PChome 價格追蹤器 v2
 
-每日自動追蹤 PChome 24h「滿意寶寶 純水99嬰兒濕巾補充包(24包組)」的售價。
+**完全免費，不需要任何 API Key！**
+
+直接呼叫 PChome 公開商品 API 取得價格，透過 Vercel Serverless Function 作為代理避免 CORS 問題。
 
 ---
 
-## 🚀 部署步驟（總共約 10 分鐘）
+## 🚀 部署步驟（約 5 分鐘）
 
 ### 第一步：上傳到 GitHub
 
-1. 前往 https://github.com，登入或註冊帳號
-2. 點右上角「**+**」→「**New repository**」
-3. Repository name 填：`price-tracker`
-4. 選擇 **Public**，點「**Create repository**」
-5. 依照 GitHub 頁面顯示的指令，將這個資料夾推上去：
+1. 前往 https://github.com，登入後點「**+ → New repository**」
+2. Repository name 填 `price-tracker`，選 **Public**，點「**Create repository**」
+3. 在你的電腦開啟終端機，執行：
 
 ```bash
-cd price-tracker
+# 進入專案資料夾（price-tracker-v2 解壓縮後的位置）
+cd price-tracker-v2
+
 git init
 git add .
-git commit -m "first commit"
+git commit -m "init"
 git branch -M main
 git remote add origin https://github.com/你的帳號/price-tracker.git
 git push -u origin main
 ```
 
----
-
-### 第二步：取得 Anthropic API Key
-
-1. 前往 https://console.anthropic.com/
-2. 登入 → 點左側「**API Keys**」→「**Create Key**」
-3. 複製 `sk-ant-api03-...` 開頭的金鑰（只顯示一次，請妥善保存）
+> 如果不熟悉 Git，也可以直接在 GitHub 網頁上點「uploading an existing file」逐一上傳檔案。
 
 ---
 
-### 第三步：部署到 Vercel（免費）
+### 第二步：部署到 Vercel（免費）
 
-1. 前往 https://vercel.com，用 GitHub 帳號登入
+1. 前往 https://vercel.com，點「**Sign up**」用 GitHub 帳號登入
 2. 點「**Add New → Project**」
-3. 選擇你的 `price-tracker` repository → 點「**Import**」
-4. 展開「**Environment Variables**」，新增：
-   - **Name**：`VITE_ANTHROPIC_API_KEY`
-   - **Value**：貼上你的 API Key
-5. 點「**Deploy**」
+3. 找到你的 `price-tracker` repository，點「**Import**」
+4. 其他設定保持預設，直接點「**Deploy**」
 
-部署完成後，Vercel 會給你一個網址，例如：
-`https://price-tracker-xxx.vercel.app`
+⚠️ **這次不需要填任何環境變數！**
 
-**這個網址就可以加入書籤了！** ✅
+5. 等待約 1 分鐘部署完成，Vercel 會給你一個網址：
+   `https://price-tracker-xxxxx.vercel.app`
 
----
-
-## 📅 設定每日自動查詢
-
-部署完成後，有兩種方式讓它每天自動執行：
-
-### 方式 A：手動開啟（簡單）
-在網頁內開啟「每日自動查詢」開關，每天打開書籤頁面即自動記錄。
-
-### 方式 B：全自動（進階）
-使用 [UptimeRobot](https://uptimerobot.com)（免費）每天定時 ping 你的 Vercel 網址，
-搭配頁面內的自動查詢功能，即可完全無人工介入每日記錄。
+**把這個網址加入瀏覽器書籤！** ✅
 
 ---
 
-## 🔧 本機開發
+## 📅 每日自動查詢
+
+開啟網頁後，打開頁面內「**每日自動查詢**」開關：
+- 每次開啟書籤頁面，若今天尚未查詢，會自動執行
+
+想要完全不用手動開啟？使用 **UptimeRobot**（免費）：
+1. 前往 https://uptimerobot.com 註冊
+2. 點「**Add New Monitor**」
+3. Monitor Type 選「**HTTP(s)**」
+4. URL 填入你的 Vercel 網址
+5. Monitoring Interval 選「**Every 1 day**」
+6. 這樣每天會自動 ping 你的頁面，觸發自動查詢
+
+---
+
+## 🔧 本機測試
 
 ```bash
-# 安裝依賴
 npm install
-
-# 複製環境變數範本
-cp .env.example .env.local
-# 編輯 .env.local，填入你的 API Key
-
-# 啟動開發伺服器
 npm run dev
+```
+
+> 注意：本機開發時 `/api/price` 需要 Vercel CLI 才能運作。
+> 安裝方式：`npm i -g vercel`，然後執行 `vercel dev` 而非 `npm run dev`
+
+---
+
+## 📁 檔案結構
+
+```
+price-tracker-v2/
+├── api/
+│   └── price.js        ← Vercel Serverless Function（爬蟲核心）
+├── src/
+│   ├── App.jsx         ← React 前端介面
+│   └── main.jsx        ← 進入點
+├── index.html
+├── package.json
+├── vite.config.js
+└── README.md
 ```
 
 ---
 
-## 💡 注意事項
+## ❓ 常見問題
 
-- 歷史價格記錄儲存在**瀏覽器 localStorage**，換裝置不會同步
-- Anthropic API 每次查詢約消耗極少 token（成本 < $0.01 TWD）
-- API Key 請勿分享或公開到 GitHub（已加入 .gitignore）
+**Q: 為什麼需要 Vercel Function 而不是直接在瀏覽器呼叫 PChome API？**
+A: 瀏覽器直接呼叫跨網域 API 會被 CORS 政策阻擋。Vercel Function 在伺服器端呼叫，不受此限制。
+
+**Q: 價格記錄存在哪裡？**
+A: 存在你瀏覽器的 localStorage，換裝置或清除瀏覽器資料會遺失。
+
+**Q: 每月費用？**
+A: 完全免費。Vercel 免費方案每月 100GB 流量，每天一次查詢完全夠用。
