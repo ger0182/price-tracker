@@ -1,102 +1,298 @@
-# 🛒 滿意寶寶 PChome 價格追蹤器 v2
+# 🛒 滿意寶寶 PChome 價格追蹤器
 
-**完全免費，不需要任何 API Key！**
+PChome 商品價格追蹤工具，使用 **Vercel Serverless Function + GitHub Actions + LINE Messaging API** 自動查價與通知。
 
-直接呼叫 PChome 公開商品 API 取得價格，透過 Vercel Serverless Function 作為代理避免 CORS 問題。
+目前追蹤商品：**滿意寶寶 純水99濕巾｜補充包 24包組**
+
+- 查價網站：https://price-tracker-sigma-lime.vercel.app/
+- 商品頁：https://24h.pchome.com.tw/prod/DAAT0R-1900GIZXQ
+- 自動排程：每天 **10:00、16:00（Asia/Taipei）**
+- 低價警報門檻：**價格 < NT$999**
 
 ---
 
-## 🚀 部署步驟（約 5 分鐘）
+## ✨ 功能
 
-### 第一步：上傳到 GitHub
+- 透過 Vercel `/api/price` 在伺服器端查詢 PChome 商品價格
+- 顯示目前售價、原價、庫存與價格走勢
+- GitHub Actions 每天自動查價兩次
+- 每次自動查價後透過 LINE Messaging API Broadcast 發送結果
+- 顯示與上一次自動查價相比的漲跌金額
+- 價格 **低於 NT$999** 時額外發送醒目的 🔥 低價警報
+- 自動查價紀錄保存在 `price-data` branch，最多保留最近 180 筆
+- 網頁啟動時會載入共享歷史，並與目前瀏覽器的 `localStorage` 紀錄合併
+- 查價失敗時也會透過 LINE 發出警告
+- GitHub Actions 支援手動 `Run workflow` 測試
 
-1. 前往 https://github.com，登入後點「**+ → New repository**」
-2. Repository name 填 `price-tracker`，選 **Public**，點「**Create repository**」
-3. 在你的電腦開啟終端機，執行：
+---
 
-```bash
-# 進入專案資料夾（price-tracker-v2 解壓縮後的位置）
-cd price-tracker-v2
+## 🧩 系統架構
 
-git init
-git add .
-git commit -m "init"
-git branch -M main
-git remote add origin https://github.com/你的帳號/price-tracker.git
-git push -u origin main
+```text
+GitHub Actions
+每天 10:00 / 16:00（Asia/Taipei）
+        │
+        ▼
+Vercel /api/price
+        │
+        ▼
+PChome 商品 API / 商品頁備援解析
+        │
+        ├──► LINE Broadcast
+        │      └── 價格 < 999 時再加發低價警報
+        │
+        └──► price-data branch
+               └── price-history.json
+                       │
+                       ▼
+                  Vercel 網頁
+                  價格歷史 / 走勢
 ```
 
-> 如果不熟悉 Git，也可以直接在 GitHub 網頁上點「uploading an existing file」逐一上傳檔案。
+---
+
+## 🚀 Vercel 部署
+
+本專案是 Vite + React，並使用 `api/price.js` 作為 Vercel Serverless Function。
+
+1. 將 repository 匯入 Vercel。
+2. Framework / Build 設定可使用 Vercel 自動偵測。
+3. 部署完成後確認以下網址可正常回傳 JSON：
+
+```text
+https://price-tracker-sigma-lime.vercel.app/api/price
+```
+
+價格查詢本身不需要第三方 API Key。
 
 ---
 
-### 第二步：部署到 Vercel（免費）
+## ⏰ GitHub Actions 自動查價
 
-1. 前往 https://vercel.com，點「**Sign up**」用 GitHub 帳號登入
-2. 點「**Add New → Project**」
-3. 找到你的 `price-tracker` repository，點「**Import**」
-4. 其他設定保持預設，直接點「**Deploy**」
+Workflow：
 
-⚠️ **這次不需要填任何環境變數！**
+```text
+.github/workflows/price-check-line.yml
+```
 
-5. 等待約 1 分鐘部署完成，Vercel 會給你一個網址：
-   `https://price-tracker-xxxxx.vercel.app`
+目前排程：
 
-**把這個網址加入瀏覽器書籤！** ✅
+```yaml
+schedule:
+  - cron: '0 10,16 * * *'
+    timezone: 'Asia/Taipei'
+```
+
+因此每天會在台灣時間：
+
+- 10:00
+- 16:00
+
+自動執行查價。
+
+Workflow 目前使用：
+
+```yaml
+uses: actions/checkout@v6
+```
+
+用來 checkout `price-data` branch 並更新共享價格歷史。
+
+### 手動測試
+
+GitHub repository：
+
+**Actions → Price Check + LINE Broadcast → Run workflow**
+
+可立即執行一次完整流程：
+
+```text
+查價 → 保存歷史 → LINE Broadcast
+```
 
 ---
 
-## 📅 每日自動查詢
+## 💬 LINE Broadcast 設定
 
-開啟網頁後，打開頁面內「**每日自動查詢**」開關：
-- 每次開啟書籤頁面，若今天尚未查詢，會自動執行
+本專案使用 LINE Messaging API 的 Broadcast 功能。
 
-想要完全不用手動開啟？使用 **UptimeRobot**（免費）：
-1. 前往 https://uptimerobot.com 註冊
-2. 點「**Add New Monitor**」
-3. Monitor Type 選「**HTTP(s)**」
-4. URL 填入你的 Vercel 網址
-5. Monitoring Interval 選「**Every 1 day**」
-6. 這樣每天會自動 ping 你的頁面，觸發自動查詢
+請在 GitHub repository 設定 Secret：
+
+**Settings → Secrets and variables → Actions → New repository secret**
+
+名稱：
+
+```text
+LINE_CHANNEL_ACCESS_TOKEN
+```
+
+值填入 LINE Developers / Messaging API Channel 的 Channel Access Token。
+
+> Token 不要直接寫入 repository。Workflow 會透過 `${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}` 讀取。
+
+### 一般通知
+
+每天兩次自動查價後，都會收到類似：
+
+```text
+🔎 商品價格自動檢查
+滿意寶寶 純水99濕巾｜補充包 24包組
+
+目前價格：NT$999
+原價：NT$2,028
+較上次：價格不變
+庫存：❌ 無庫存
+檢查時間：2026-08-10 16:00
+```
+
+### 🔥 低價警報
+
+目前門檻設定：
+
+```text
+LOW_PRICE_THRESHOLD = 999
+```
+
+判斷條件是 **小於 999**，不是小於等於：
+
+```text
+NT$999 → 一般通知
+NT$998 → 一般通知 + 🔥低價警報
+NT$899 → 一般通知 + 🔥低價警報
+```
+
+低價時會在同一次 Broadcast 中額外送出第二則醒目訊息。
 
 ---
 
-## 🔧 本機測試
+## 📈 價格歷史資料
+
+GitHub Actions 的自動查價紀錄不存放在 `master`，而是使用獨立的：
+
+```text
+price-data
+```
+
+branch。
+
+資料檔：
+
+```text
+price-history.json
+```
+
+格式：
+
+```json
+{
+  "history": [
+    {
+      "date": "2026-08-10T06:11:33.692Z",
+      "price": 999,
+      "original_price": 2028,
+      "in_stock": false
+    }
+  ]
+}
+```
+
+最多保留最近 **180 筆**。
+
+這樣每天更新價格資料時不需要修改 `master`，也不會因為單純新增價格紀錄而持續觸發 Vercel production deployment。
+
+網頁啟動時 `src/main.jsx` 會讀取共享紀錄，再與目前瀏覽器內的手動查價紀錄合併。
+
+---
+
+## 🖥️ 網頁手動查價
+
+網頁也可以直接按：
+
+```text
+🔍 立即查詢價格
+```
+
+手動查詢會更新目前瀏覽器的 `localStorage`。
+
+網頁內原本的「每日自動查詢」開關仍可使用：開啟頁面時，如果該瀏覽器當天尚未查詢，就會自動查一次。
+
+但真正不依賴瀏覽器的固定排程是由 **GitHub Actions** 負責。
+
+---
+
+## 🔧 本機開發
+
+安裝依賴：
 
 ```bash
 npm install
+```
+
+只啟動 Vite 前端：
+
+```bash
 npm run dev
 ```
 
-> 注意：本機開發時 `/api/price` 需要 Vercel CLI 才能運作。
-> 安裝方式：`npm i -g vercel`，然後執行 `vercel dev` 而非 `npm run dev`
+因為 `/api/price` 是 Vercel Serverless Function，如果要在本機完整測試 API，建議使用 Vercel CLI：
+
+```bash
+npm i -g vercel
+vercel dev
+```
 
 ---
 
-## 📁 檔案結構
+## 📁 主要檔案
 
-```
-price-tracker-v2/
+```text
+price-tracker/
+├── .github/
+│   └── workflows/
+│       └── price-check-line.yml   # 定時查價、保存歷史、LINE 通知
 ├── api/
-│   └── price.js        ← Vercel Serverless Function（爬蟲核心）
+│   └── price.js                   # Vercel Serverless Function / PChome 查價
 ├── src/
-│   ├── App.jsx         ← React 前端介面
-│   └── main.jsx        ← 進入點
+│   ├── App.jsx                    # React 查價介面與價格走勢
+│   └── main.jsx                   # 載入共享歷史並啟動 React
 ├── index.html
 ├── package.json
 ├── vite.config.js
 └── README.md
+
+price-data branch
+└── price-history.json             # GitHub Actions 自動查價共享歷史
 ```
 
 ---
 
-## ❓ 常見問題
+## 🔐 安全性
 
-**Q: 為什麼需要 Vercel Function 而不是直接在瀏覽器呼叫 PChome API？**
-A: 瀏覽器直接呼叫跨網域 API 會被 CORS 政策阻擋。Vercel Function 在伺服器端呼叫，不受此限制。
+- `LINE_CHANNEL_ACCESS_TOKEN` 僅存放於 GitHub Actions Secrets。
+- 不要將 Channel Access Token commit 到 GitHub。
+- Workflow 執行 log 中 GitHub 會遮蔽 Secret。
+- `price-history.json` 只包含價格、時間與庫存資訊，不包含 LINE Token。
 
-**Q: 價格記錄存在哪裡？**
-A: 存在你瀏覽器的 localStorage，換裝置或清除瀏覽器資料會遺失。
+---
 
-**Q: 每月費用？**
-A: 完全免費。Vercel 免費方案每月 100GB 流量，每天一次查詢完全夠用。
+## ❓常見問題
+
+### 為什麼需要 Vercel Function？
+
+瀏覽器直接跨網域呼叫 PChome API 可能受到 CORS 限制。`api/price.js` 在伺服器端查詢，可以避免瀏覽器 CORS 問題，並提供商品頁 HTML 備援解析。
+
+### 關掉電腦還會自動查價嗎？
+
+會。排程由 GitHub Actions 執行，不需要電腦、瀏覽器或網頁保持開啟。
+
+### 為什麼使用 `price-data` branch？
+
+避免每次自動查價都修改 `master`。價格資料與程式碼分離，也能避免因更新歷史資料而反覆部署 Vercel。
+
+### NT$999 會發低價警報嗎？
+
+不會。目前條件是 `price < 999`，所以最低要 NT$998 才會觸發低價警報。
+
+### LINE Broadcast 會傳給誰？
+
+會廣播給符合 LINE Messaging API Broadcast 發送條件的 Official Account 好友。目前這個專案採用 Broadcast，沒有綁定特定 user ID。
