@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout shared price data branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: price-data
           fetch-depth: 1
