@@ -89,7 +89,7 @@ jobs:
                 elif jq -e -n --arg c "${CHANGE}" '($c|tonumber) > 0' >/dev/null; then
                   CHANGE_TEXT="$(printf '\n較上次：▲ NT$%s' "${CHANGE}")"
                 else
-                  CHANGE_TEXT="\n較上次：價格不變"
+                  CHANGE_TEXT="$(printf '\n較上次：價格不變')"
                 fi
               fi
 
