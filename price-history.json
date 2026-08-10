@@ -1,3 +1,10 @@
 {
-  "history": []
+  "history": [
+    {
+      "date": "2026-08-10T06:11:33.692Z",
+      "price": 999,
+      "original_price": 2028,
+      "in_stock": false
+    }
+  ]
 }
