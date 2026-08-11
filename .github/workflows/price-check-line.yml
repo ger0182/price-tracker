@@ -2,8 +2,8 @@ name: Price Check + LINE Broadcast
 
 on:
   schedule:
-    # Taiwan time: every day at 10:00 and 16:00
-    - cron: '0 10,16 * * *'
+    # Taiwan time: every day at 10:13 and 16:13
+    - cron: '13 10,16 * * *'
       timezone: 'Asia/Taipei'
   workflow_dispatch:
 
