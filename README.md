@@ -6,7 +6,7 @@ PChome 商品價格追蹤工具，使用 **Vercel Serverless Function + GitHub A
 
 - 查價網站：https://price-tracker-sigma-lime.vercel.app/
 - 商品頁：https://24h.pchome.com.tw/prod/DAAT0R-1900GIZXQ
-- 自動排程：每天 **10:00、16:00（Asia/Taipei）**
+- 自動排程：每天 **10:13、16:13（Asia/Taipei）**
 - 低價警報門檻：**價格 < NT$999**
 
 ---
@@ -30,7 +30,7 @@ PChome 商品價格追蹤工具，使用 **Vercel Serverless Function + GitHub A
 
 ```text
 GitHub Actions
-每天 10:00 / 16:00（Asia/Taipei）
+每天 10:13 / 16:13（Asia/Taipei）
         │
         ▼
 Vercel /api/price
@@ -79,16 +79,16 @@ Workflow：
 
 ```yaml
 schedule:
-  - cron: '0 10,16 * * *'
+  - cron: '13 10,16 * * *'
     timezone: 'Asia/Taipei'
 ```
 
 因此每天會在台灣時間：
 
-- 10:00
-- 16:00
+- 10:13
+- 16:13
 
-自動執行查價。
+自動執行查價。刻意避開整點，以降低 GitHub Actions scheduled workflow 在高負載時段延遲或漏跑的機率。
 
 Workflow 目前使用：
 
@@ -142,7 +142,7 @@ LINE_CHANNEL_ACCESS_TOKEN
 原價：NT$2,028
 較上次：價格不變
 庫存：❌ 無庫存
-檢查時間：2026-08-10 16:00
+檢查時間：2026-08-10 16:13
 ```
 
 ### 🔥 低價警報
