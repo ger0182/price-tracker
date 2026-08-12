@@ -29,6 +29,12 @@
       "price": 999,
       "original_price": 2028,
       "in_stock": false
+    },
+    {
+      "date": "2026-08-12T09:21:37.338Z",
+      "price": 999,
+      "original_price": 2028,
+      "in_stock": false
     }
   ]
 }
