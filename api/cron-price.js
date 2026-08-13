@@ -1,4 +1,5 @@
 const TRACKER_URL = "https://price-tracker-sigma-lime.vercel.app/";
+const PRICE_API_URL = "https://price-tracker-sigma-lime.vercel.app/api/price";
 const PRODUCT_URL = "https://24h.pchome.com.tw/prod/DAAT0R-1900GIZXQ";
 const PRODUCT_NAME = "滿意寶寶 純水99濕巾｜補充包 24包組";
 const LOW_PRICE_THRESHOLD = 999;
@@ -33,6 +34,18 @@ async function sendLineBroadcast(messages, token) {
   }
 }
 
+function describeApiError(data) {
+  if (typeof data?.error === "string") {
+    return data.error;
+  }
+
+  if (data?.error != null) {
+    return JSON.stringify(data.error);
+  }
+
+  return JSON.stringify(data ?? {});
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
@@ -52,20 +65,28 @@ export default async function handler(req, res) {
     });
   }
 
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  const protocol = req.headers["x-forwarded-proto"] || "https";
-  const priceApiUrl = `${protocol}://${host}/api/price`;
   const checkTime = formatTaipeiTime();
 
   try {
-    const priceResponse = await fetch(priceApiUrl, {
+    const priceResponse = await fetch(PRICE_API_URL, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
 
-    const data = await priceResponse.json();
+    const responseText = await priceResponse.text();
+    let data;
+
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      throw new Error(
+        `Price API returned non-JSON: ${priceResponse.status} ${responseText.slice(0, 500)}`,
+      );
+    }
+
     if (!priceResponse.ok || !data.success || data.price == null) {
-      throw new Error(data.error || `Price API failed: ${priceResponse.status}`);
+      const detail = describeApiError(data);
+      throw new Error(`Price API failed: ${priceResponse.status} ${detail}`);
     }
 
     const price = Number(data.price);
