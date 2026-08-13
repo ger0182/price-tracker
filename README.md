@@ -1,138 +1,130 @@
 # 🛒 滿意寶寶 PChome 價格追蹤器
 
-PChome 商品價格追蹤工具，使用 **Vercel Serverless Function + GitHub Actions + LINE Messaging API** 自動查價與通知。
+PChome 商品價格追蹤工具，使用 **Vercel Serverless Function + Vercel Cron Jobs + LINE Messaging API** 自動查價與通知。
 
 目前追蹤商品：**滿意寶寶 純水99濕巾｜補充包 24包組**
 
 - 查價網站：https://price-tracker-sigma-lime.vercel.app/
 - 商品頁：https://24h.pchome.com.tw/prod/DAAT0R-1900GIZXQ
-- 自動排程：每天 **10:13、16:13（Asia/Taipei）**
+- 自動排程：每天台灣時間約 **10:13、16:13**
 - 低價警報門檻：**價格 < NT$999**
 
 ---
 
 ## ✨ 功能
 
-- 透過 Vercel `/api/price` 在伺服器端查詢 PChome 商品價格
-- 顯示目前售價、原價、庫存與價格走勢
-- GitHub Actions 每天自動查價兩次
-- 每次自動查價後透過 LINE Messaging API Broadcast 發送結果
-- 顯示與上一次自動查價相比的漲跌金額
-- 價格 **低於 NT$999** 時額外發送醒目的 🔥 低價警報
-- 自動查價紀錄保存在 `price-data` branch，最多保留最近 180 筆
-- 網頁啟動時會載入共享歷史，並與目前瀏覽器的 `localStorage` 紀錄合併
-- 查價失敗時也會透過 LINE 發出警告
-- GitHub Actions 支援手動 `Run workflow` 測試
+- `api/price.js`：Vercel Serverless Function，查詢 PChome 價格、原價與庫存
+- `api/cron-price.js`：Vercel Cron 專用入口
+- 每天自動查價兩次
+- 每次查價後透過 LINE Messaging API Broadcast 發送結果
+- 價格 **低於 NT$999** 時額外加發 🔥 低價警報
+- 查價失敗時也會透過 LINE 發送警告
+- 網頁仍可手動查價並保存瀏覽器 `localStorage` 歷史
 
 ---
 
 ## 🧩 系統架構
 
 ```text
-GitHub Actions
-每天 10:13 / 16:13（Asia/Taipei）
+Vercel Cron Jobs
+02:13 UTC / 08:13 UTC
+= 台灣 10:13 / 16:13
         │
         ▼
-Vercel /api/price
+/api/cron-price
+        │
+        ├── 驗證 CRON_SECRET
+        │
+        ▼
+/api/price
         │
         ▼
 PChome 商品 API / 商品頁備援解析
         │
-        ├──► LINE Broadcast
-        │      └── 價格 < 999 時再加發低價警報
+        ▼
+LINE Messaging API Broadcast
         │
-        └──► price-data branch
-               └── price-history.json
-                       │
-                       ▼
-                  Vercel 網頁
-                  價格歷史 / 走勢
+        └── 價格 < 999 時額外發送低價警報
 ```
+
+GitHub Actions 已不再負責固定排程，避免與 Vercel Cron 重複執行。
 
 ---
 
-## 🚀 Vercel 部署
+## ⏰ Vercel Cron 排程
 
-本專案是 Vite + React，並使用 `api/price.js` 作為 Vercel Serverless Function。
-
-1. 將 repository 匯入 Vercel。
-2. Framework / Build 設定可使用 Vercel 自動偵測。
-3. 部署完成後確認以下網址可正常回傳 JSON：
+排程設定在：
 
 ```text
-https://price-tracker-sigma-lime.vercel.app/api/price
+vercel.json
 ```
 
-價格查詢本身不需要第三方 API Key。
+目前設定：
+
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron-price",
+      "schedule": "13 2 * * *"
+    },
+    {
+      "path": "/api/cron-price",
+      "schedule": "13 8 * * *"
+    }
+  ]
+}
+```
+
+Vercel Cron 使用 UTC：
+
+- `02:13 UTC` → 台灣時間 `10:13`
+- `08:13 UTC` → 台灣時間 `16:13`
+
+> Hobby 方案的 Cron 執行時間可能不是精準到指定分鐘，但會依上述 daily schedule 執行。
 
 ---
 
-## ⏰ GitHub Actions 自動查價
+## 🔐 Vercel Environment Variables
 
-Workflow：
+請在 Vercel Project：
 
-```text
-.github/workflows/price-check-line.yml
-```
+**Settings → Environment Variables**
 
-目前排程：
+新增以下兩個變數，並至少套用到 **Production**：
 
-```yaml
-schedule:
-  - cron: '13 10,16 * * *'
-    timezone: 'Asia/Taipei'
-```
+### `LINE_CHANNEL_ACCESS_TOKEN`
 
-因此每天會在台灣時間：
-
-- 10:13
-- 16:13
-
-自動執行查價。刻意避開整點，以降低 GitHub Actions scheduled workflow 在高負載時段延遲或漏跑的機率。
-
-Workflow 目前使用：
-
-```yaml
-uses: actions/checkout@v6
-```
-
-用來 checkout `price-data` branch 並更新共享價格歷史。
-
-### 手動測試
-
-GitHub repository：
-
-**Actions → Price Check + LINE Broadcast → Run workflow**
-
-可立即執行一次完整流程：
+填入 LINE Developers / Messaging API Channel 的 Channel Access Token。
 
 ```text
-查價 → 保存歷史 → LINE Broadcast
+LINE_CHANNEL_ACCESS_TOKEN=你的_LINE_Channel_Access_Token
 ```
+
+### `CRON_SECRET`
+
+建立一組夠長的隨機字串，例如 32 bytes 以上。
+
+```text
+CRON_SECRET=一組長且隨機的秘密字串
+```
+
+Vercel Cron 觸發時會帶入：
+
+```text
+Authorization: Bearer <CRON_SECRET>
+```
+
+`api/cron-price.js` 會驗證此 Header，避免任何人直接呼叫 Cron API 造成 LINE 廣播。
+
+設定完 Environment Variables 後，請重新部署 Production。
 
 ---
 
-## 💬 LINE Broadcast 設定
+## 💬 LINE Broadcast
 
-本專案使用 LINE Messaging API 的 Broadcast 功能。
-
-請在 GitHub repository 設定 Secret：
-
-**Settings → Secrets and variables → Actions → New repository secret**
-
-名稱：
-
-```text
-LINE_CHANNEL_ACCESS_TOKEN
-```
-
-值填入 LINE Developers / Messaging API Channel 的 Channel Access Token。
-
-> Token 不要直接寫入 repository。Workflow 會透過 `${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}` 讀取。
-
-### 一般通知
-
-每天兩次自動查價後，都會收到類似：
+一般通知範例：
 
 ```text
 🔎 商品價格自動檢查
@@ -140,20 +132,11 @@ LINE_CHANNEL_ACCESS_TOKEN
 
 目前價格：NT$999
 原價：NT$2,028
-較上次：價格不變
 庫存：❌ 無庫存
-檢查時間：2026-08-10 16:13
+檢查時間：2026/08/13 10:13
 ```
 
-### 🔥 低價警報
-
-目前門檻設定：
-
-```text
-LOW_PRICE_THRESHOLD = 999
-```
-
-判斷條件是 **小於 999**，不是小於等於：
+低價判斷：
 
 ```text
 NT$999 → 一般通知
@@ -161,80 +144,79 @@ NT$998 → 一般通知 + 🔥低價警報
 NT$899 → 一般通知 + 🔥低價警報
 ```
 
-低價時會在同一次 Broadcast 中額外送出第二則醒目訊息。
+條件是：
+
+```text
+price < 999
+```
+
+不是 `<= 999`。
 
 ---
 
-## 📈 價格歷史資料
+## 🧪 測試 Cron
 
-GitHub Actions 的自動查價紀錄不存放在 `master`，而是使用獨立的：
-
-```text
-price-data
-```
-
-branch。
-
-資料檔：
+正式 Cron endpoint：
 
 ```text
-price-history.json
+/api/cron-price
 ```
 
-格式：
+因為它受到 `CRON_SECRET` 保護，直接從瀏覽器開啟會得到 `401 Unauthorized`，這是正常的。
 
-```json
-{
-  "history": [
-    {
-      "date": "2026-08-10T06:11:33.692Z",
-      "price": 999,
-      "original_price": 2028,
-      "in_stock": false
-    }
-  ]
-}
+可使用 Vercel CLI 測試已部署的 Cron：
+
+```bash
+vercel crons ls
+vercel crons run /api/cron-price
 ```
 
-最多保留最近 **180 筆**。
+也可以在 Vercel Dashboard 查看 Functions / Runtime Logs，確認查價與 LINE Broadcast 執行結果。
 
-這樣每天更新價格資料時不需要修改 `master`，也不會因為單純新增價格紀錄而持續觸發 Vercel production deployment。
+---
 
-網頁啟動時 `src/main.jsx` 會讀取共享紀錄，再與目前瀏覽器內的手動查價紀錄合併。
+## 📈 價格歷史
+
+網頁的手動查價仍會保存到目前瀏覽器的 `localStorage`。
+
+先前 GitHub Actions 自動保存的共享歷史仍保留在：
+
+```text
+price-data branch / price-history.json
+```
+
+但因為固定排程已搬到 Vercel，**Vercel Cron 目前不會繼續修改 GitHub 的 `price-data` branch**。
+
+如果要讓 Vercel 自動查價也繼續累積跨裝置共享歷史，建議下一步改用 **Vercel Blob** 保存 `price-history.json`，不需要讓 Vercel 持有 GitHub 寫入 Token。
 
 ---
 
 ## 🖥️ 網頁手動查價
 
-網頁也可以直接按：
+網頁仍可直接按：
 
 ```text
 🔍 立即查詢價格
 ```
 
-手動查詢會更新目前瀏覽器的 `localStorage`。
+手動查詢會呼叫：
 
-網頁內原本的「每日自動查詢」開關仍可使用：開啟頁面時，如果該瀏覽器當天尚未查詢，就會自動查一次。
+```text
+/api/price
+```
 
-但真正不依賴瀏覽器的固定排程是由 **GitHub Actions** 負責。
+並更新目前瀏覽器的價格歷史與走勢。
 
 ---
 
 ## 🔧 本機開發
 
-安裝依賴：
-
 ```bash
 npm install
-```
-
-只啟動 Vite 前端：
-
-```bash
 npm run dev
 ```
 
-因為 `/api/price` 是 Vercel Serverless Function，如果要在本機完整測試 API，建議使用 Vercel CLI：
+如果需要同時測試 Vercel Serverless Functions：
 
 ```bash
 npm i -g vercel
@@ -247,52 +229,26 @@ vercel dev
 
 ```text
 price-tracker/
-├── .github/
-│   └── workflows/
-│       └── price-check-line.yml   # 定時查價、保存歷史、LINE 通知
 ├── api/
-│   └── price.js                   # Vercel Serverless Function / PChome 查價
+│   ├── price.js          # PChome 查價 API
+│   └── cron-price.js     # Vercel Cron + LINE Broadcast
 ├── src/
-│   ├── App.jsx                    # React 查價介面與價格走勢
-│   └── main.jsx                   # 載入共享歷史並啟動 React
+│   ├── App.jsx           # React 查價介面與價格走勢
+│   └── main.jsx          # 載入共享/本機歷史並啟動 React
+├── vercel.json           # Vercel Cron schedules
+├── .env.example          # Vercel 環境變數範例
 ├── index.html
 ├── package.json
 ├── vite.config.js
 └── README.md
-
-price-data branch
-└── price-history.json             # GitHub Actions 自動查價共享歷史
 ```
 
 ---
 
-## 🔐 安全性
+## 🔒 安全性
 
-- `LINE_CHANNEL_ACCESS_TOKEN` 僅存放於 GitHub Actions Secrets。
-- 不要將 Channel Access Token commit 到 GitHub。
-- Workflow 執行 log 中 GitHub 會遮蔽 Secret。
-- `price-history.json` 只包含價格、時間與庫存資訊，不包含 LINE Token。
-
----
-
-## ❓常見問題
-
-### 為什麼需要 Vercel Function？
-
-瀏覽器直接跨網域呼叫 PChome API 可能受到 CORS 限制。`api/price.js` 在伺服器端查詢，可以避免瀏覽器 CORS 問題，並提供商品頁 HTML 備援解析。
-
-### 關掉電腦還會自動查價嗎？
-
-會。排程由 GitHub Actions 執行，不需要電腦、瀏覽器或網頁保持開啟。
-
-### 為什麼使用 `price-data` branch？
-
-避免每次自動查價都修改 `master`。價格資料與程式碼分離，也能避免因更新歷史資料而反覆部署 Vercel。
-
-### NT$999 會發低價警報嗎？
-
-不會。目前條件是 `price < 999`，所以最低要 NT$998 才會觸發低價警報。
-
-### LINE Broadcast 會傳給誰？
-
-會廣播給符合 LINE Messaging API Broadcast 發送條件的 Official Account 好友。目前這個專案採用 Broadcast，沒有綁定特定 user ID。
+- `LINE_CHANNEL_ACCESS_TOKEN` 只放在 Vercel Environment Variables
+- `CRON_SECRET` 只放在 Vercel Environment Variables
+- 不要將任何真實 Token commit 到 GitHub
+- `/api/cron-price` 必須通過 `Authorization: Bearer <CRON_SECRET>` 驗證
+- `/api/price` 只負責查價，不包含 LINE Token
