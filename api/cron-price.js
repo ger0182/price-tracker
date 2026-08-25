@@ -91,50 +91,40 @@ export default async function handler(req, res) {
 
     const price = Number(data.price);
     const originalPrice = data.original_price == null ? null : Number(data.original_price);
-    const stockText = data.in_stock ? "✅ 有庫存" : "❌ 無庫存";
+    const inStock = Boolean(data.in_stock);
+    const shouldNotify = price < LOW_PRICE_THRESHOLD;
 
-    const priceText = originalPrice && originalPrice !== price
-      ? `目前價格：NT$${price}\n原價：NT$${originalPrice}`
-      : `目前價格：NT$${price}`;
+    if (shouldNotify) {
+      const stockText = inStock ? "✅ 有庫存" : "❌ 無庫存";
+      const originalPriceText = originalPrice && originalPrice !== price
+        ? `原價：NT$${originalPrice}`
+        : null;
 
-    const normalMessage = [
-      "🔎 商品價格自動檢查",
-      PRODUCT_NAME,
-      "",
-      priceText,
-      `庫存：${stockText}`,
-      `檢查時間：${checkTime}`,
-      "",
-      `🛒 商品頁：${PRODUCT_URL}`,
-      `📊 查價頁：${TRACKER_URL}`,
-    ].join("\n");
-
-    const messages = [normalMessage];
-
-    if (price < LOW_PRICE_THRESHOLD) {
-      messages.push([
+      const lowPriceMessage = [
         "🔥🔥🔥 低價警報 🔥🔥🔥",
         "",
         PRODUCT_NAME,
-        `目前只要 NT$${price}！`,
+        `目前價格：NT$${price}`,
+        originalPriceText,
         `已低於你設定的 NT$${LOW_PRICE_THRESHOLD} 門檻。`,
+        `庫存：${stockText}`,
+        `檢查時間：${checkTime}`,
         "",
-        stockText,
-        "",
-        "👉 建議現在查看商品：",
-        PRODUCT_URL,
-      ].join("\n"));
-    }
+        `🛒 商品頁：${PRODUCT_URL}`,
+        `📊 查價頁：${TRACKER_URL}`,
+      ].filter(Boolean).join("\n");
 
-    await sendLineBroadcast(messages, lineToken);
+      await sendLineBroadcast([lowPriceMessage], lineToken);
+    }
 
     return res.status(200).json({
       success: true,
       source: "vercel-cron",
       price,
       original_price: originalPrice,
-      in_stock: Boolean(data.in_stock),
-      low_price_alert: price < LOW_PRICE_THRESHOLD,
+      in_stock: inStock,
+      notified: shouldNotify,
+      low_price_alert: shouldNotify,
       checked_at: new Date().toISOString(),
       schedule: req.headers["x-vercel-cron-schedule"] || null,
     });
