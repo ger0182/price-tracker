@@ -1,13 +1,13 @@
 # 🛒 滿意寶寶 PChome 價格追蹤器
 
-PChome 商品價格追蹤工具，使用 **Vercel Serverless Function + Vercel Cron Jobs + LINE Messaging API** 自動查價與通知。
+PChome 商品價格追蹤工具，使用 **Vercel Serverless Function + Vercel Cron Jobs + LINE Messaging API** 自動查價與低價通知。
 
 目前追蹤商品：**滿意寶寶 純水99濕巾｜補充包 24包組**
 
 - 查價網站：https://price-tracker-sigma-lime.vercel.app/
 - 商品頁：https://24h.pchome.com.tw/prod/DAAT0R-1900GIZXQ
 - 自動排程：每天台灣時間約 **10:13、16:13**
-- 低價警報門檻：**價格 < NT$999**
+- LINE 通知條件：**價格 < NT$999**
 
 ---
 
@@ -16,9 +16,9 @@ PChome 商品價格追蹤工具，使用 **Vercel Serverless Function + Vercel C
 - `api/price.js`：Vercel Serverless Function，查詢 PChome 價格、原價與庫存
 - `api/cron-price.js`：Vercel Cron 專用入口
 - 每天自動查價兩次
-- 每次查價後透過 LINE Messaging API Broadcast 發送結果
-- 價格 **低於 NT$999** 時額外加發 🔥 低價警報
-- 查價失敗時也會透過 LINE 發送警告
+- 價格 **低於 NT$999** 時才透過 LINE Messaging API Broadcast 發送 🔥 低價警報
+- 價格 **NT$999 或更高時不發 LINE**
+- 查價失敗時仍會透過 LINE 發送警告
 - 網頁仍可手動查價並保存瀏覽器 `localStorage` 歷史
 
 ---
@@ -41,10 +41,9 @@ Vercel Cron Jobs
         ▼
 PChome 商品 API / 商品頁備援解析
         │
-        ▼
-LINE Messaging API Broadcast
-        │
-        └── 價格 < 999 時額外發送低價警報
+        ├── price < 999 ──► LINE 低價警報
+        ├── price >= 999 ─► 靜默，不發 LINE
+        └── 查價失敗 ─────► LINE 失敗警告
 ```
 
 GitHub Actions 已不再負責固定排程，避免與 Vercel Cron 重複執行。
@@ -124,24 +123,12 @@ Authorization: Bearer <CRON_SECRET>
 
 ## 💬 LINE Broadcast
 
-一般通知範例：
+目前只有價格低於門檻時才通知：
 
 ```text
-🔎 商品價格自動檢查
-滿意寶寶 純水99濕巾｜補充包 24包組
-
-目前價格：NT$999
-原價：NT$2,028
-庫存：❌ 無庫存
-檢查時間：2026/08/13 10:13
-```
-
-低價判斷：
-
-```text
-NT$999 → 一般通知
-NT$998 → 一般通知 + 🔥低價警報
-NT$899 → 一般通知 + 🔥低價警報
+NT$999 → 不通知
+NT$998 → 🔥低價警報
+NT$899 → 🔥低價警報
 ```
 
 條件是：
@@ -151,6 +138,27 @@ price < 999
 ```
 
 不是 `<= 999`。
+
+低價通知範例：
+
+```text
+🔥🔥🔥 低價警報 🔥🔥🔥
+
+滿意寶寶 純水99濕巾｜補充包 24包組
+目前價格：NT$998
+原價：NT$2,028
+已低於你設定的 NT$999 門檻。
+庫存：✅ 有庫存
+檢查時間：2026/08/25 10:13
+```
+
+如果查價 API 本身失敗，仍會收到：
+
+```text
+⚠️ 商品價格查詢失敗
+```
+
+避免服務異常時完全沒有提示。
 
 ---
 
@@ -171,7 +179,9 @@ vercel crons ls
 vercel crons run /api/cron-price
 ```
 
-也可以在 Vercel Dashboard 查看 Functions / Runtime Logs，確認查價與 LINE Broadcast 執行結果。
+也可以在 Vercel Dashboard 查看 Functions / Runtime Logs。
+
+若目前價格為 `999` 或更高，手動執行 Cron 成功後 **不會收到 LINE**，這是新設定的預期行為；Runtime Logs 中 `/api/cron-price` 與 `/api/price` 應顯示 `200`。
 
 ---
 
@@ -231,7 +241,7 @@ vercel dev
 price-tracker/
 ├── api/
 │   ├── price.js          # PChome 查價 API
-│   └── cron-price.js     # Vercel Cron + LINE Broadcast
+│   └── cron-price.js     # Vercel Cron + LINE 低價通知
 ├── src/
 │   ├── App.jsx           # React 查價介面與價格走勢
 │   └── main.jsx          # 載入共享/本機歷史並啟動 React
