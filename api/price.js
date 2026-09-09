@@ -1,10 +1,9 @@
 // api/price.js — Vercel Serverless Function
-// 基本售價從 PChome prodapi 取得；若館別促銷頁有「售價已折」則優先採用活動價。
+// 有效售價優先使用 PChome 搜尋 JSON API（可取得售價已折），prodapi 用於庫存與備援。
 
 const PRODUCT_ID = "DAAT0R-1900GIZXQ";
 const PRODUCT_ID_WITH_SUFFIX = `${PRODUCT_ID}-000`;
-const PRODUCT_NAME_KEYWORD = "純水99嬰兒濕巾補充包(24包組)";
-const PROMOTION_PAGE_URL = "https://24h.pchome.com.tw/region/DAAO/bestsellers";
+const SEARCH_QUERY = "滿意寶寶 純水99嬰兒濕巾補充包 24包組";
 
 const REQUEST_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36",
@@ -16,65 +15,45 @@ function toNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
-function extractPromotionPriceFromCard(cardHtml, basePrice) {
-  if (!cardHtml) return null;
+async function fetchSearchProduct() {
+  const query = encodeURIComponent(SEARCH_QUERY);
+  const url = `https://ecshweb.pchome.com.tw/search/v4.3/all/results?q=${query}&page=1&pageCount=40&_=${Date.now()}`;
 
-  const normalized = cardHtml
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&#36;/g, "$")
-    .replace(/\s+/g, " ");
+  const response = await fetch(url, {
+    headers: {
+      ...REQUEST_HEADERS,
+      Accept: "application/json, text/plain, */*",
+    },
+    cache: "no-store",
+  });
 
-  const candidates = [];
-  const patterns = [
-    /任選\s*1\s*件\s*\$?\s*([\d,]+)/gi,
-    /\$\s*([\d,]+)\s*(?:\([^)]*售價已折[^)]*\)|售價已折)/gi,
-    /(?:salePrice|finalPrice|discountPrice|promoPrice)["']?\s*[:=]\s*["']?\s*([\d,]+)/gi,
-  ];
-
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(normalized)) !== null) {
-      const value = toNumber(match[1]);
-      if (value && value < basePrice) candidates.push(value);
-    }
+  if (!response.ok) {
+    throw new Error(`PChome 搜尋 API 回應錯誤: ${response.status}`);
   }
 
-  return candidates.length ? Math.min(...candidates) : null;
+  const data = await response.json();
+  const products = data?.Prods || data?.prods || [];
+  return products.find((product) => product?.Id === PRODUCT_ID || product?.id === PRODUCT_ID) || null;
 }
 
-async function fetchPromotionalPrice(basePrice) {
-  try {
-    const response = await fetch(`${PROMOTION_PAGE_URL}?_=${Date.now()}`, {
-      headers: {
-        ...REQUEST_HEADERS,
-        Accept: "text/html,application/xhtml+xml",
-      },
-      cache: "no-store",
-    });
+async function fetchProdData() {
+  const url = `https://ecapi.pchome.com.tw/ecshop/prodapi/v2/prod?id=${PRODUCT_ID_WITH_SUFFIX}&fields=Price,Qty,Store`;
 
-    if (!response.ok) return null;
-    const html = await response.text();
+  const response = await fetch(url, {
+    headers: {
+      ...REQUEST_HEADERS,
+      Referer: "https://24h.pchome.com.tw/",
+      Accept: "application/json, text/plain, */*",
+    },
+    cache: "no-store",
+  });
 
-    let index = html.indexOf(PRODUCT_ID);
-    if (index < 0) index = html.indexOf(PRODUCT_NAME_KEYWORD);
-    if (index < 0) return null;
-
-    // 優先只解析包含目標商品的 <a> 卡片，避免抓到相鄰商品價格。
-    let start = html.lastIndexOf("<a", index);
-    let end = html.indexOf("</a>", index);
-    let cardHtml = "";
-
-    if (start >= 0 && end > index) {
-      cardHtml = html.slice(start, end + 4);
-    } else {
-      cardHtml = html.slice(Math.max(0, index - 1800), Math.min(html.length, index + 3000));
-    }
-
-    return extractPromotionPriceFromCard(cardHtml, basePrice);
-  } catch {
-    // 促銷來源失敗不應讓整個查價失敗；仍可回傳 prodapi 基本售價。
-    return null;
+  if (!response.ok) {
+    throw new Error(`PChome 商品 API 回應錯誤: ${response.status}`);
   }
+
+  const data = await response.json();
+  return data?.[PRODUCT_ID_WITH_SUFFIX] || null;
 }
 
 export default async function handler(req, res) {
@@ -83,47 +62,36 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
 
   try {
-    const apiUrl = `https://ecapi.pchome.com.tw/ecshop/prodapi/v2/prod?id=${PRODUCT_ID_WITH_SUFFIX}&fields=Price,Discount,Qty,Store`;
+    const [searchResult, prodResult] = await Promise.allSettled([
+      fetchSearchProduct(),
+      fetchProdData(),
+    ]);
 
-    const response = await fetch(apiUrl, {
-      headers: {
-        ...REQUEST_HEADERS,
-        Referer: "https://24h.pchome.com.tw/",
-        Accept: "application/json, text/plain, */*",
-      },
-      cache: "no-store",
-    });
+    const searchProduct = searchResult.status === "fulfilled" ? searchResult.value : null;
+    const productData = prodResult.status === "fulfilled" ? prodResult.value : null;
 
-    if (!response.ok) {
-      throw new Error(`PChome API 回應錯誤: ${response.status}`);
+    const searchPrice = toNumber(searchProduct?.Price ?? searchProduct?.price);
+    const searchOriginPrice = toNumber(searchProduct?.OriginPrice ?? searchProduct?.originPrice);
+    const prodPrice = toNumber(productData?.Price?.P) || toNumber(productData?.Price?.M);
+    const prodOriginalPrice = toNumber(productData?.Price?.M);
+
+    const price = searchPrice || prodPrice;
+    if (!price) {
+      const searchError = searchResult.status === "rejected" ? String(searchResult.reason) : "找不到目標商品";
+      const prodError = prodResult.status === "rejected" ? String(prodResult.reason) : "找不到商品資料";
+      throw new Error(`無法取得價格；搜尋 API: ${searchError}；商品 API: ${prodError}`);
     }
 
-    const raw = await response.text();
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      throw new Error("無法解析 PChome API 回應: " + raw.substring(0, 100));
+    let originalPrice = null;
+    if (searchPrice) {
+      if (searchOriginPrice && searchOriginPrice !== searchPrice) {
+        originalPrice = searchOriginPrice;
+      }
+    } else if (prodOriginalPrice && prodOriginalPrice !== prodPrice) {
+      originalPrice = prodOriginalPrice;
     }
 
-    const productData = data[PRODUCT_ID_WITH_SUFFIX];
-    if (!productData) {
-      throw new Error("找不到商品資料，API 回傳: " + JSON.stringify(data).substring(0, 200));
-    }
-
-    const basePrice = toNumber(productData?.Price?.P) || toNumber(productData?.Price?.M);
-    const listPrice = toNumber(productData?.Price?.M);
-    const inStock = (productData?.Qty ?? 0) > 0;
-
-    if (!basePrice) {
-      throw new Error("無法取得價格，Price 欄位: " + JSON.stringify(productData?.Price));
-    }
-
-    const promotionPrice = await fetchPromotionalPrice(basePrice);
-    const price = promotionPrice || basePrice;
-    const originalPrice = promotionPrice
-      ? basePrice
-      : (listPrice && listPrice !== basePrice ? listPrice : null);
+    const inStock = productData ? (productData?.Qty ?? 0) > 0 : true;
 
     return res.status(200).json({
       success: true,
@@ -131,59 +99,12 @@ export default async function handler(req, res) {
       original_price: originalPrice,
       in_stock: inStock,
       fetched_at: new Date().toISOString(),
-      source: promotionPrice ? "pchome_promotion" : "pchome_prodapi",
+      source: searchPrice ? "pchome_search" : "pchome_prodapi",
     });
-
   } catch (error) {
-    // 備援：直接抓商品頁 HTML 解析公開價格。
-    try {
-      const htmlRes = await fetch(`https://24h.pchome.com.tw/prod/${PRODUCT_ID}?_=${Date.now()}`, {
-        headers: {
-          ...REQUEST_HEADERS,
-          Accept: "text/html,application/xhtml+xml",
-        },
-        cache: "no-store",
-      });
-      const html = await htmlRes.text();
-
-      let price = null;
-
-      const ogPrice = html.match(/<meta[^>]+property="product:price:amount"[^>]+content="([^"]+)"/);
-      if (ogPrice) price = toNumber(ogPrice[1]);
-
-      if (!price) {
-        const ldMatch = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/);
-        if (ldMatch) {
-          try {
-            const ld = JSON.parse(ldMatch[1]);
-            price = toNumber(ld?.offers?.price || ld?.price);
-          } catch {}
-        }
-      }
-
-      if (!price) {
-        const priceMatch = html.match(/"price"\s*:\s*(\d+)/);
-        if (priceMatch) price = toNumber(priceMatch[1]);
-      }
-
-      if (price) {
-        return res.status(200).json({
-          success: true,
-          price,
-          original_price: null,
-          in_stock: true,
-          fetched_at: new Date().toISOString(),
-          source: "html_fallback",
-        });
-      }
-
-      throw new Error("備援方法也無法取得價格");
-    } catch (fallbackError) {
-      return res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        fallback_error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-      });
-    }
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
