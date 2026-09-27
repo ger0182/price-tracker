@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="theme-color" content="#fff5fa">
+<title>幸運轉盤｜小楓 vs 二寶</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif}
+body{min-height:100svh;display:grid;place-items:center;padding:24px 14px calc(24px + env(safe-area-inset-bottom));background:linear-gradient(135deg,#fff4f8,#eef4ff);color:#26232a;text-align:center}
+.app{width:min(92vw,460px)}
+h1{margin:0 0 6px;font-size:34px}
+.sub{margin:0 0 18px;color:#6e6875;font-size:15px}
+.card{background:rgba(255,255,255,.9);border-radius:28px;padding:22px 12px 20px;box-shadow:0 18px 45px rgba(50,45,75,.15);backdrop-filter:blur(10px)}
+.wheel-wrap{position:relative;width:min(84vw,420px);aspect-ratio:1;margin:4px auto 20px;cursor:pointer;user-select:none;touch-action:manipulation}
+canvas{width:100%;height:100%;display:block;border-radius:50%;filter:drop-shadow(0 12px 20px rgba(0,0,0,.18));transition:transform 4.8s cubic-bezier(.12,.72,.08,1)}
+.pointer{position:absolute;z-index:5;left:50%;top:-8px;transform:translateX(-50%);width:0;height:0;border-left:18px solid transparent;border-right:18px solid transparent;border-top:34px solid #2d2a32}
+.center{position:absolute;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);width:22%;aspect-ratio:1;border-radius:50%;background:#fff;display:grid;place-items:center;font-weight:900;font-size:24px;box-shadow:0 6px 16px rgba(0,0,0,.18);border:6px solid rgba(255,255,255,.95);pointer-events:none}
+button{border:0;border-radius:999px;padding:15px 34px;font-size:20px;font-weight:800;color:#fff;background:linear-gradient(135deg,#ff6f9f,#739cff);box-shadow:0 10px 22px rgba(115,156,255,.3)}
+button:disabled{opacity:.6}
+.result{min-height:54px;display:flex;align-items:center;justify-content:center;margin-top:14px;color:#706a76;font-size:18px}
+.result strong{margin-left:8px;font-size:34px;color:#2d2a32;animation:pop .35s ease}
+.legend{margin-top:4px;font-size:14px;color:#6d6874;display:flex;gap:16px;justify-content:center}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+.note{margin-top:12px;font-size:12px;color:#8a8490}
+@keyframes pop{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>幸運轉盤</h1>
+  <div class="sub">20 格平均分配｜小楓 vs 二寶</div>
+  <div class="card">
+    <div class="wheel-wrap" id="wheelWrap">
+      <div class="pointer"></div>
+      <canvas id="wheel" width="900" height="900"></canvas>
+      <div class="center">GO!</div>
+    </div>
+    <button id="spinBtn">開始轉動</button>
+    <div class="result" id="result">點轉盤或按鈕開始</div>
+    <div class="legend">
+      <span><i class="dot" style="background:#ff7aa8"></i>小楓 × 10</span>
+      <span><i class="dot" style="background:#78a9ff"></i>二寶 × 10</span>
+    </div>
+    <div class="note">使用瀏覽器 Web Crypto 隨機抽選，每人機率 50%</div>
+  </div>
+</div>
+<script>
+const canvas=document.getElementById("wheel");
+const ctx=canvas.getContext("2d");
+const btn=document.getElementById("spinBtn");
+const wrap=document.getElementById("wheelWrap");
+const result=document.getElementById("result");
+
+const names=Array.from({length:20},(_,i)=>i%2===0?"小楓":"二寶");
+const colors=["#ff7aa8","#78a9ff"];
+const N=names.length;
+const arc=Math.PI*2/N;
+let rotation=0;
+let spinning=false;
+
+function draw(){
+  const W=canvas.width,C=W/2,R=W*.47;
+  ctx.clearRect(0,0,W,W);
+  for(let i=0;i<N;i++){
+    const s=-Math.PI/2+i*arc,e=s+arc;
+    ctx.beginPath();
+    ctx.moveTo(C,C);
+    ctx.arc(C,C,R,s,e);
+    ctx.closePath();
+    ctx.fillStyle=colors[i%2];
+    ctx.fill();
+    ctx.strokeStyle="rgba(255,255,255,.95)";
+    ctx.lineWidth=4;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(C,C);
+    ctx.rotate(s+arc/2);
+    ctx.textAlign="right";
+    ctx.textBaseline="middle";
+    ctx.fillStyle="#fff";
+    ctx.font='800 34px "PingFang TC","Microsoft JhengHei",sans-serif';
+    ctx.shadowColor="rgba(0,0,0,.2)";
+    ctx.shadowBlur=5;
+    ctx.fillText(names[i],R*.89,0);
+    ctx.restore();
+  }
+  ctx.beginPath();
+  ctx.arc(C,C,R,0,Math.PI*2);
+  ctx.strokeStyle="#fff";
+  ctx.lineWidth=12;
+  ctx.stroke();
+}
+
+function secureRandomInt(max){
+  if(!window.crypto||!crypto.getRandomValues){
+    throw new Error("此瀏覽器不支援安全隨機數");
+  }
+  const range=0x100000000;
+  const limit=range-(range%max);
+  const a=new Uint32Array(1);
+  let v;
+  do{
+    crypto.getRandomValues(a);
+    v=a[0];
+  }while(v>=limit);
+  return v%max;
+}
+
+function spin(){
+  if(spinning)return;
+  spinning=true;
+  btn.disabled=true;
+  result.textContent="轉動中…";
+
+  let winner;
+  try{
+    winner=secureRandomInt(N);
+  }catch(e){
+    result.textContent="無法取得安全隨機數，請使用 Safari 開啟";
+    btn.disabled=false;
+    spinning=false;
+    return;
+  }
+
+  const sliceDeg=360/N;
+  const winnerCenter=winner*sliceDeg+sliceDeg/2;
+  const currentMod=((rotation%360)+360)%360;
+  const targetMod=((360-winnerCenter)%360+360)%360;
+  let delta=(targetMod-currentMod+360)%360;
+  delta+=(5+secureRandomInt(4))*360;
+  rotation+=delta;
+
+  canvas.style.transform=`rotate(${rotation}deg)`;
+
+  setTimeout(()=>{
+    result.innerHTML=`抽中：<strong>${names[winner]}</strong>`;
+    btn.disabled=false;
+    spinning=false;
+    if(navigator.vibrate)navigator.vibrate([40,30,80]);
+  },4900);
+}
+
+btn.addEventListener("click",spin);
+wrap.addEventListener("click",spin);
+draw();
+</script>
+</body>
+</html>
